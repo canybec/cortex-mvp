@@ -2,9 +2,12 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { browser } from '$app/environment';
 	import KnowledgeSpace from '$lib/components/KnowledgeSpace.svelte';
+	import SystemStatus from '$lib/components/SystemStatus.svelte';
 
 	// Define type inline to avoid importing the store module during SSR
 	type ConnectionState = 'idle' | 'connecting' | 'connected' | 'listening' | 'speaking' | 'thinking' | 'error';
+	type ModelType = 'gpt-4o-realtime' | 'gpt-5.2' | null;
+	type ProcessingMode = 'idle' | 'realtime' | 'thinking' | 'searching';
 
 	// Reactive state
 	let connectionState = $state<ConnectionState>('idle');
@@ -13,6 +16,13 @@
 	let error = $state<string | null>(null);
 	let mounted = $state(false);
 	let showKnowledgeSpace = $state(true);
+
+	// System status state
+	let activeModel = $state<ModelType>(null);
+	let processingMode = $state<ProcessingMode>('idle');
+	let knowledgeActive = $state(false);
+	let knowledgeEntities = $state(0);
+	let isSearching = $state(false);
 
 	// Audio visualization state
 	let volumeHistory = $state<number[]>(Array(12).fill(0));
@@ -147,6 +157,13 @@
 				currentVolume = realtimeStore.volume;
 				error = realtimeStore.error;
 
+				// System status
+				activeModel = realtimeStore.activeModel;
+				processingMode = realtimeStore.processingMode;
+				knowledgeActive = realtimeStore.knowledgeActive;
+				knowledgeEntities = realtimeStore.knowledgeEntities;
+				isSearching = realtimeStore.isSearching;
+
 				// Process new messages for entity extraction
 				processNewMessages();
 			}
@@ -213,12 +230,24 @@
 
 <div class="flex flex-col items-center justify-center min-h-screen p-4 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
 	<!-- Header -->
-	<header class="mb-8 text-center">
+	<header class="mb-4 text-center">
 		<h1 class="text-4xl md:text-5xl font-bold bg-gradient-to-r from-cyan-400 via-blue-400 to-purple-400 bg-clip-text text-transparent">
 			Cortex
 		</h1>
 		<p class="text-slate-400 mt-2">Your ADHD Voice Assistant</p>
 	</header>
+
+	<!-- System Status Bar -->
+	<div class="mb-6">
+		<SystemStatus
+			{activeModel}
+			{processingMode}
+			{knowledgeActive}
+			{knowledgeEntities}
+			{isSearching}
+			visible={mounted && connectionState !== 'idle'}
+		/>
+	</div>
 
 	<!-- Reactive Orb -->
 	<button

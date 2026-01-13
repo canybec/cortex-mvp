@@ -49,12 +49,32 @@ interface SessionConfig {
 	} | null;
 }
 
+// Model identifiers
+export type ModelType = 'gpt-4o-realtime' | 'gpt-5.2' | null;
+export type ProcessingMode = 'idle' | 'realtime' | 'thinking' | 'searching';
+
+// System status for UI display
+export interface SystemStatus {
+	activeModel: ModelType;
+	mode: ProcessingMode;
+	knowledgeActive: boolean;
+	knowledgeEntities: number;
+	isSearching: boolean;
+}
+
 class RealtimeStore {
 	// Reactive state using Svelte 5 runes
 	state = $state<ConnectionState>('idle');
 	transcript = $state<string[]>([]);
 	volume = $state(0);
 	error = $state<string | null>(null);
+
+	// System status for UI display
+	activeModel = $state<ModelType>(null);
+	processingMode = $state<ProcessingMode>('idle');
+	knowledgeActive = $state(false);
+	knowledgeEntities = $state(0);
+	isSearching = $state(false);
 
 	private ws: WebSocket | null = null;
 	private sessionId: string | null = null;
@@ -112,6 +132,8 @@ class RealtimeStore {
 	private handleOpen(): void {
 		console.log('WebSocket connected');
 		this.state = 'connected';
+		this.activeModel = 'gpt-4o-realtime';
+		this.processingMode = 'idle';
 
 		// Send session configuration with context
 		this.sendSessionUpdate();
@@ -127,10 +149,17 @@ class RealtimeStore {
 			const context = await getQuickContext('default-user');
 			if (context) {
 				contextAugment = `\n\n${context}`;
+				this.knowledgeActive = true;
 				console.log('Injected context:', context);
 			}
+
+			// Get entity count from cosmos store
+			const { cosmosStore } = await import('$lib/graphrag/cosmos');
+			const stats = cosmosStore.getStats();
+			this.knowledgeEntities = stats.entityCount;
 		} catch (err) {
 			console.warn('Failed to get context:', err);
+			this.knowledgeActive = false;
 		}
 
 		const sessionConfig: SessionConfig = {
@@ -176,6 +205,7 @@ class RealtimeStore {
 
 				case 'input_audio_buffer.speech_started':
 					this.state = 'listening';
+					this.processingMode = 'realtime';
 					break;
 
 				case 'input_audio_buffer.speech_stopped':
@@ -211,6 +241,7 @@ class RealtimeStore {
 				case 'response.audio.delta':
 					// Audio response chunk - play it
 					this.state = 'speaking';
+					this.processingMode = 'realtime';
 					if (message.delta) {
 						const audioData = this.base64ToArrayBuffer(message.delta as string);
 						audioManager.queuePlayback(audioData);
@@ -231,6 +262,7 @@ class RealtimeStore {
 						setTimeout(() => this.injectResponse(response), 100);
 					} else if (this.state !== 'thinking') {
 						this.state = 'connected';
+						this.processingMode = 'idle';
 						this.delegationTriggered = false;
 					}
 					break;
@@ -283,6 +315,8 @@ class RealtimeStore {
 		if (this.state === 'thinking') return; // Prevent double-trigger
 
 		this.state = 'thinking';
+		this.activeModel = 'gpt-5.2';
+		this.processingMode = 'thinking';
 		this.addTranscript('[Thinking...]');
 
 		try {
@@ -299,7 +333,12 @@ class RealtimeStore {
 				throw new Error('Thinking failed');
 			}
 
-			const { answer } = await response.json();
+			const { answer, usedSearch } = await response.json();
+
+			// Track if search was used
+			if (usedSearch) {
+				this.isSearching = false; // Search completed
+			}
 
 			// Store the response - will be injected when response.done fires
 			this.pendingThinkingResponse = answer;
@@ -307,6 +346,9 @@ class RealtimeStore {
 		} catch (err) {
 			console.error('Thinking error:', err);
 			this.pendingThinkingResponse = "I had trouble analyzing that. Let me give you a simpler answer.";
+		} finally {
+			// Switch back to realtime model for speaking
+			this.activeModel = 'gpt-4o-realtime';
 		}
 	}
 
@@ -482,6 +524,8 @@ class RealtimeStore {
 
 		// Reset state
 		this.state = 'connected';
+		this.processingMode = 'idle';
+		this.isSearching = false;
 	}
 
 	/**
@@ -499,6 +543,12 @@ class RealtimeStore {
 		this.sessionId = null;
 		this.pendingThinkingResponse = null;
 		this.delegationTriggered = false;
+
+		// Reset status
+		this.activeModel = null;
+		this.processingMode = 'idle';
+		this.knowledgeActive = false;
+		this.isSearching = false;
 	}
 
 	/**
