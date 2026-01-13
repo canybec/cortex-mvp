@@ -69,6 +69,10 @@ class RealtimeStore {
 	private lastUserQuery: string = '';
 	private conversationContext: string[] = [];
 
+	// Thinking tier state - store pending response until current response completes
+	private pendingThinkingResponse: string | null = null;
+	private delegationTriggered: boolean = false;
+
 	/**
 	 * Connect to Azure OpenAI Realtime API
 	 */
@@ -179,8 +183,10 @@ class RealtimeStore {
 						const delta = message.delta as string;
 						this.appendToLastTranscript(delta);
 
-						// Check if AI is asking to think
-						this.checkForDelegation();
+						// Check if AI is asking to think (only trigger once per response)
+						if (!this.delegationTriggered) {
+							this.checkForDelegation();
+						}
 					}
 					break;
 
@@ -212,9 +218,16 @@ class RealtimeStore {
 					break;
 
 				case 'response.done':
-					// Full response complete
-					if (this.state !== 'thinking') {
+					// Full response complete - now safe to inject thinking response
+					if (this.pendingThinkingResponse) {
+						const response = this.pendingThinkingResponse;
+						this.pendingThinkingResponse = null;
+						this.delegationTriggered = false;
+						// Small delay to ensure audio is done
+						setTimeout(() => this.injectResponse(response), 100);
+					} else if (this.state !== 'thinking') {
 						this.state = 'connected';
+						this.delegationTriggered = false;
 					}
 					break;
 
@@ -253,12 +266,14 @@ class RealtimeStore {
 		if (lowerEntry.includes('let me think') ||
 			lowerEntry.includes('let me analyze') ||
 			lowerEntry.includes('thinking about that')) {
+			this.delegationTriggered = true;
 			this.triggerThinking();
 		}
 	}
 
 	/**
 	 * Trigger the thinking tier - call GPT-5.2
+	 * Stores response until current Realtime response completes
 	 */
 	private async triggerThinking(): Promise<void> {
 		if (this.state === 'thinking') return; // Prevent double-trigger
@@ -282,12 +297,12 @@ class RealtimeStore {
 
 			const { answer } = await response.json();
 
-			// Inject the answer back to Realtime to speak
-			this.injectResponse(answer);
+			// Store the response - will be injected when response.done fires
+			this.pendingThinkingResponse = answer;
 
 		} catch (err) {
 			console.error('Thinking error:', err);
-			this.injectResponse("I had trouble analyzing that. Let me give you a simpler answer.");
+			this.pendingThinkingResponse = "I had trouble analyzing that. Let me give you a simpler answer.";
 		}
 	}
 
@@ -380,6 +395,10 @@ class RealtimeStore {
 			this.send({ type: 'response.cancel' });
 		}
 
+		// Clear pending thinking response
+		this.pendingThinkingResponse = null;
+		this.delegationTriggered = false;
+
 		// Reset state
 		this.state = 'connected';
 		this.addTranscript('[Interrupted]');
@@ -398,6 +417,8 @@ class RealtimeStore {
 
 		this.state = 'idle';
 		this.sessionId = null;
+		this.pendingThinkingResponse = null;
+		this.delegationTriggered = false;
 	}
 
 	/**
