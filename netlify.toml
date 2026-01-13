@@ -7,15 +7,9 @@
   port = 5173
   targetPort = 5173
 
-# Headers for audio worklet and CORS
+# Ensure audio worklet JS files are served correctly
 [[headers]]
-  for = "/*"
-  [headers.values]
-    Cross-Origin-Opener-Policy = "same-origin"
-    Cross-Origin-Embedder-Policy = "require-corp"
-
-# Allow audio worklet module
-[[headers]]
-  for = "*.ts"
+  for = "/audio-processor.js"
   [headers.values]
     Content-Type = "application/javascript"
+    Cache-Control = "public, max-age=31536000"

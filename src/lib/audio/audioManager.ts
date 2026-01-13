@@ -49,10 +49,21 @@ export class AudioManager {
 		this.audioContext = new AudioContext({ sampleRate: 48000 });
 
 		// Load and register the audio worklet from static folder
-		await this.audioContext.audioWorklet.addModule('/audio-processor.js');
+		try {
+			await this.audioContext.audioWorklet.addModule('/audio-processor.js');
+		} catch (err) {
+			throw new Error(`Failed to load audio worklet: ${err}`);
+		}
+
+		// Small delay to ensure processor is registered
+		await new Promise(resolve => setTimeout(resolve, 100));
 
 		// Create worklet node
-		this.workletNode = new AudioWorkletNode(this.audioContext, 'audio-capture-processor');
+		try {
+			this.workletNode = new AudioWorkletNode(this.audioContext, 'audio-capture-processor');
+		} catch (err) {
+			throw new Error(`Failed to create AudioWorkletNode: ${err}`);
+		}
 
 		// Handle messages from worklet
 		this.workletNode.port.onmessage = (event) => {
