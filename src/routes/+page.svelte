@@ -1,39 +1,30 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { realtimeStore, type ConnectionState } from '$lib/realtime/realtimeStore.svelte';
+	import { browser } from '$app/environment';
+
+	// Define type inline to avoid importing the store module during SSR
+	type ConnectionState = 'idle' | 'connecting' | 'connected' | 'listening' | 'speaking' | 'error';
 
 	// Reactive state
 	let connectionState = $state<ConnectionState>('idle');
 	let transcript = $state<string[]>([]);
 	let currentVolume = $state(0);
 	let error = $state<string | null>(null);
+	let mounted = $state(false);
 
-	// Subscribe to store changes
-	$effect(() => {
-		connectionState = realtimeStore.state;
-	});
-
-	$effect(() => {
-		transcript = realtimeStore.transcript;
-	});
-
-	$effect(() => {
-		currentVolume = realtimeStore.volume;
-	});
-
-	$effect(() => {
-		error = realtimeStore.error;
-	});
+	// Store reference (loaded dynamically)
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	let realtimeStore: any = null;
 
 	// Button click handler
 	async function handleButtonClick() {
+		if (!realtimeStore) return;
+
 		if (connectionState === 'idle' || connectionState === 'error') {
 			await realtimeStore.connect();
 		} else if (connectionState === 'listening' || connectionState === 'speaking') {
-			// Interrupt - stop everything
 			realtimeStore.interrupt();
 		} else if (connectionState === 'connected') {
-			// Start listening
 			await realtimeStore.startListening();
 		}
 	}
@@ -46,13 +37,32 @@
 		}
 	}
 
-	onMount(() => {
+	onMount(async () => {
+		// Dynamically import the store only on client
+		const module = await import('$lib/realtime/realtimeStore.svelte');
+		realtimeStore = module.realtimeStore;
+		mounted = true;
+
 		window.addEventListener('keydown', handleKeydown);
+
+		// Poll store state (since we can't use $effect with dynamic imports easily)
+		const interval = setInterval(() => {
+			if (realtimeStore) {
+				connectionState = realtimeStore.state;
+				transcript = realtimeStore.transcript;
+				currentVolume = realtimeStore.volume;
+				error = realtimeStore.error;
+			}
+		}, 50);
+
+		return () => clearInterval(interval);
 	});
 
 	onDestroy(() => {
-		window.removeEventListener('keydown', handleKeydown);
-		realtimeStore.disconnect();
+		if (browser) {
+			window.removeEventListener('keydown', handleKeydown);
+			realtimeStore?.disconnect();
+		}
 	});
 
 	// Computed styles
@@ -125,11 +135,16 @@
 		class={buttonClasses()}
 		style="--volume: {currentVolume}"
 		aria-label={buttonText()}
+		disabled={!mounted}
 	>
 		<div class="flex flex-col items-center gap-4">
 			<span class="text-6xl">{stateIcon()}</span>
 			<span class="text-xl md:text-2xl font-medium text-slate-200">
-				{buttonText()}
+				{#if !mounted}
+					Loading...
+				{:else}
+					{buttonText()}
+				{/if}
 			</span>
 		</div>
 	</button>
@@ -140,7 +155,7 @@
 			<p class="text-slate-400 text-sm">
 				Press <kbd class="px-2 py-1 bg-slate-800 rounded text-xs">Space</kbd> or tap to interrupt
 			</p>
-		{:else if connectionState === 'idle'}
+		{:else if connectionState === 'idle' && mounted}
 			<p class="text-slate-400 text-sm">
 				Press <kbd class="px-2 py-1 bg-slate-800 rounded text-xs">Space</kbd> or tap to start
 			</p>
