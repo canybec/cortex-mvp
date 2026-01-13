@@ -12,6 +12,10 @@
 	let error = $state<string | null>(null);
 	let mounted = $state(false);
 
+	// Audio visualization state
+	let volumeHistory = $state<number[]>(Array(12).fill(0));
+	let animationFrame: number;
+
 	// Store reference (loaded dynamically)
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	let realtimeStore: any = null;
@@ -37,6 +41,12 @@
 		}
 	}
 
+	// Animate volume history for equalizer effect
+	function updateVolumeHistory() {
+		volumeHistory = [...volumeHistory.slice(1), currentVolume];
+		animationFrame = requestAnimationFrame(updateVolumeHistory);
+	}
+
 	onMount(async () => {
 		// Dynamically import the store only on client
 		const module = await import('$lib/realtime/realtimeStore.svelte');
@@ -55,6 +65,9 @@
 			}
 		}, 50);
 
+		// Start volume history animation
+		animationFrame = requestAnimationFrame(updateVolumeHistory);
+
 		return () => clearInterval(interval);
 	});
 
@@ -62,37 +75,36 @@
 		if (browser) {
 			window.removeEventListener('keydown', handleKeydown);
 			realtimeStore?.disconnect();
+			if (animationFrame) cancelAnimationFrame(animationFrame);
 		}
 	});
 
-	// Computed styles
-	const buttonClasses = $derived(() => {
-		const base = 'w-64 h-64 md:w-80 md:h-80 rounded-full flex items-center justify-center cursor-pointer select-none transition-all-smooth';
-
+	// State colors
+	const stateColors = $derived(() => {
 		switch (connectionState) {
 			case 'connecting':
-				return `${base} bg-yellow-600/20 border-4 border-yellow-500/50`;
+				return { primary: '#eab308', secondary: '#ca8a04', glow: 'rgba(234, 179, 8, 0.4)' };
 			case 'connected':
-				return `${base} bg-blue-600/20 border-4 border-blue-500/50 hover:bg-blue-600/30`;
+				return { primary: '#3b82f6', secondary: '#2563eb', glow: 'rgba(59, 130, 246, 0.4)' };
 			case 'listening':
-				return `${base} bg-blue-600/30 border-4 border-blue-400 animate-pulse-glow volume-scale`;
+				return { primary: '#06b6d4', secondary: '#0891b2', glow: 'rgba(6, 182, 212, 0.5)' };
 			case 'speaking':
-				return `${base} bg-green-600/30 border-4 border-green-400 animate-speak-pulse`;
+				return { primary: '#10b981', secondary: '#059669', glow: 'rgba(16, 185, 129, 0.5)' };
 			case 'thinking':
-				return `${base} bg-purple-600/30 border-4 border-purple-400 animate-pulse`;
+				return { primary: '#8b5cf6', secondary: '#7c3aed', glow: 'rgba(139, 92, 246, 0.5)' };
 			case 'error':
-				return `${base} bg-red-600/20 border-4 border-red-500/50 hover:bg-red-600/30`;
+				return { primary: '#ef4444', secondary: '#dc2626', glow: 'rgba(239, 68, 68, 0.4)' };
 			default:
-				return `${base} bg-slate-800/50 border-4 border-slate-600 hover:bg-slate-700/50 hover:border-slate-500`;
+				return { primary: '#64748b', secondary: '#475569', glow: 'rgba(100, 116, 139, 0.3)' };
 		}
 	});
 
-	const buttonText = $derived(() => {
+	const statusText = $derived(() => {
 		switch (connectionState) {
 			case 'connecting':
 				return 'Connecting...';
 			case 'connected':
-				return 'Ready';
+				return 'Tap to Start';
 			case 'listening':
 				return 'Listening...';
 			case 'speaking':
@@ -100,59 +112,124 @@
 			case 'thinking':
 				return 'Thinking...';
 			case 'error':
-				return 'Retry';
+				return 'Tap to Retry';
 			default:
-				return 'Tap to Speak';
-		}
-	});
-
-	const stateIcon = $derived(() => {
-		switch (connectionState) {
-			case 'connecting':
-				return '⏳';
-			case 'connected':
-				return '🎯';
-			case 'listening':
-				return '🎤';
-			case 'speaking':
-				return '🔊';
-			case 'thinking':
-				return '🧠';
-			case 'error':
-				return '⚠️';
-			default:
-				return '💬';
+				return 'Tap to Connect';
 		}
 	});
 </script>
 
-<div class="flex flex-col items-center justify-center min-h-screen p-4">
+<svelte:head>
+	<title>Cortex - ADHD Voice Assistant</title>
+</svelte:head>
+
+<div class="flex flex-col items-center justify-center min-h-screen p-4 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
 	<!-- Header -->
 	<header class="mb-8 text-center">
-		<h1 class="text-4xl md:text-5xl font-bold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
+		<h1 class="text-4xl md:text-5xl font-bold bg-gradient-to-r from-cyan-400 via-blue-400 to-purple-400 bg-clip-text text-transparent">
 			Cortex
 		</h1>
 		<p class="text-slate-400 mt-2">Your ADHD Voice Assistant</p>
 	</header>
 
-	<!-- Big Button -->
+	<!-- Reactive Orb -->
 	<button
 		onclick={handleButtonClick}
-		class={buttonClasses()}
-		style="--volume: {currentVolume}"
-		aria-label={buttonText()}
+		class="relative w-64 h-64 md:w-80 md:h-80 cursor-pointer select-none focus:outline-none group"
+		aria-label={statusText()}
 		disabled={!mounted}
 	>
-		<div class="flex flex-col items-center gap-4">
-			<span class="text-6xl">{stateIcon()}</span>
-			<span class="text-xl md:text-2xl font-medium text-slate-200">
+		<!-- Background glow -->
+		<div
+			class="absolute inset-0 rounded-full blur-3xl opacity-50 transition-all duration-500"
+			style="background: radial-gradient(circle, {stateColors().glow} 0%, transparent 70%); transform: scale({1 + currentVolume * 0.3});"
+		></div>
+
+		<!-- Outer ring with rotating gradient -->
+		<div
+			class="absolute inset-2 rounded-full transition-all duration-300"
+			style="
+				background: conic-gradient(from 0deg, {stateColors().primary}, {stateColors().secondary}, {stateColors().primary});
+				opacity: {connectionState === 'idle' ? 0.3 : 0.7};
+				animation: {connectionState === 'listening' || connectionState === 'speaking' ? 'spin 3s linear infinite' : 'none'};
+			"
+		></div>
+
+		<!-- Inner dark circle -->
+		<div class="absolute inset-4 rounded-full bg-slate-950/90 backdrop-blur-sm"></div>
+
+		<!-- Equalizer bars (circular arrangement) -->
+		<div class="absolute inset-0 flex items-center justify-center">
+			{#each volumeHistory as vol, i}
+				{@const angle = (i / volumeHistory.length) * 360}
+				{@const barHeight = 20 + (connectionState === 'listening' || connectionState === 'speaking' ? vol * 60 : (connectionState === 'thinking' ? Math.sin(Date.now() / 200 + i) * 20 + 20 : 0))}
+				<div
+					class="absolute w-1.5 md:w-2 rounded-full transition-all duration-75"
+					style="
+						height: {barHeight}px;
+						background: linear-gradient(to top, {stateColors().primary}, {stateColors().secondary});
+						transform: rotate({angle}deg) translateY(-70px) rotate(-{angle}deg);
+						opacity: {connectionState === 'idle' ? 0.2 : 0.8};
+					"
+				></div>
+			{/each}
+		</div>
+
+		<!-- Center content -->
+		<div class="absolute inset-0 flex flex-col items-center justify-center">
+			<!-- Pulsing core orb -->
+			<div
+				class="w-20 h-20 md:w-24 md:h-24 rounded-full transition-all duration-150 flex items-center justify-center"
+				style="
+					background: radial-gradient(circle at 30% 30%, {stateColors().primary}, {stateColors().secondary});
+					transform: scale({1 + (connectionState === 'listening' || connectionState === 'speaking' ? currentVolume * 0.3 : 0)});
+					box-shadow: 0 0 {30 + currentVolume * 40}px {stateColors().glow}, inset 0 0 20px rgba(255,255,255,0.1);
+				"
+			>
+				<!-- State icon -->
+				<span class="text-3xl md:text-4xl filter drop-shadow-lg">
+					{#if !mounted}
+						⏳
+					{:else if connectionState === 'connecting'}
+						⏳
+					{:else if connectionState === 'connected'}
+						🎯
+					{:else if connectionState === 'listening'}
+						🎤
+					{:else if connectionState === 'speaking'}
+						🔊
+					{:else if connectionState === 'thinking'}
+						🧠
+					{:else if connectionState === 'error'}
+						⚠️
+					{:else}
+						💬
+					{/if}
+				</span>
+			</div>
+
+			<!-- Status text -->
+			<span class="mt-4 text-lg md:text-xl font-medium text-slate-200 drop-shadow-lg">
 				{#if !mounted}
 					Loading...
 				{:else}
-					{buttonText()}
+					{statusText()}
 				{/if}
 			</span>
 		</div>
+
+		<!-- Pulse rings for active states -->
+		{#if connectionState === 'listening' || connectionState === 'speaking'}
+			<div class="absolute inset-0 rounded-full border-2 animate-ping opacity-20"
+				style="border-color: {stateColors().primary};"
+			></div>
+		{/if}
+
+		{#if connectionState === 'thinking'}
+			<div class="absolute inset-0 rounded-full border-2 animate-pulse opacity-30"
+				style="border-color: {stateColors().primary};"
+			></div>
+		{/if}
 	</button>
 
 	<!-- Status indicator -->
@@ -177,35 +254,53 @@
 
 	<!-- Conversation Transcript -->
 	<div class="mt-8 w-full max-w-2xl">
-		<div class="bg-slate-900/50 rounded-lg border border-slate-700 p-4 min-h-[200px] max-h-[400px] overflow-y-auto">
+		<div class="bg-slate-900/50 rounded-lg border border-slate-700/50 p-4 min-h-[200px] max-h-[400px] overflow-y-auto backdrop-blur-sm">
 			{#each transcript as entry}
 				{#if entry.startsWith('You:')}
 					<!-- User message -->
 					<div class="flex justify-end mb-3">
-						<div class="bg-blue-600/30 border border-blue-500/40 rounded-lg px-4 py-2 max-w-[80%]">
-							<p class="text-blue-100 text-sm">{entry.replace('You: ', '')}</p>
+						<div class="bg-cyan-600/20 border border-cyan-500/30 rounded-lg px-4 py-2 max-w-[80%]">
+							<p class="text-cyan-100 text-sm">{entry.replace('You: ', '')}</p>
 						</div>
 					</div>
 				{:else if entry.startsWith('AI:')}
 					<!-- AI message -->
 					<div class="flex justify-start mb-3">
-						<div class="bg-slate-700/50 border border-slate-600/40 rounded-lg px-4 py-2 max-w-[80%]">
+						<div class="bg-slate-700/50 border border-slate-600/30 rounded-lg px-4 py-2 max-w-[80%]">
 							<p class="text-slate-200 text-sm">{entry.replace('AI: ', '')}</p>
+						</div>
+					</div>
+				{:else if entry.startsWith('[Thinking')}
+					<!-- Thinking indicator -->
+					<div class="flex justify-center mb-3">
+						<div class="bg-purple-600/20 border border-purple-500/30 rounded-lg px-4 py-2">
+							<p class="text-purple-300 text-sm">🧠 Analyzing with GPT-5.2...</p>
 						</div>
 					</div>
 				{:else if !entry.startsWith('[')}
 					<!-- Streaming AI response (no prefix yet) -->
 					<div class="flex justify-start mb-3">
-						<div class="bg-slate-700/50 border border-slate-600/40 rounded-lg px-4 py-2 max-w-[80%]">
+						<div class="bg-slate-700/50 border border-slate-600/30 rounded-lg px-4 py-2 max-w-[80%]">
 							<p class="text-slate-200 text-sm">{entry}</p>
 						</div>
 					</div>
 				{/if}
 			{:else}
 				<p class="text-slate-500 text-sm italic text-center py-8">
-					Tap the button to start a conversation...
+					Tap the orb to start a conversation...
 				</p>
 			{/each}
 		</div>
 	</div>
 </div>
+
+<style>
+	@keyframes spin {
+		from {
+			transform: rotate(0deg);
+		}
+		to {
+			transform: rotate(360deg);
+		}
+	}
+</style>
