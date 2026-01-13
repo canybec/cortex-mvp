@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Build output
+.svelte-kit/
+build/
+.netlify/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Package lock (optional - you may want to keep this)
+# package-lock.json

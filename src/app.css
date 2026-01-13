@@ -1,0 +1,67 @@
+@import 'tailwindcss';
+
+/* Custom CSS Variables */
+:root {
+	--pulse-color: rgb(59, 130, 246);
+	--pulse-glow: rgba(59, 130, 246, 0.5);
+}
+
+/* Pulsing animation for active listening state */
+@keyframes pulse-ring {
+	0% {
+		transform: scale(1);
+		opacity: 0.8;
+	}
+	50% {
+		transform: scale(1.15);
+		opacity: 0.4;
+	}
+	100% {
+		transform: scale(1);
+		opacity: 0.8;
+	}
+}
+
+@keyframes pulse-glow {
+	0%, 100% {
+		box-shadow: 0 0 40px var(--pulse-glow), 0 0 80px var(--pulse-glow);
+	}
+	50% {
+		box-shadow: 0 0 60px var(--pulse-glow), 0 0 120px var(--pulse-glow);
+	}
+}
+
+.animate-pulse-ring {
+	animation: pulse-ring 1.5s ease-in-out infinite;
+}
+
+.animate-pulse-glow {
+	animation: pulse-glow 1.5s ease-in-out infinite;
+}
+
+/* Speaking state - faster pulse */
+@keyframes speak-pulse {
+	0%, 100% {
+		transform: scale(1);
+		box-shadow: 0 0 30px rgba(34, 197, 94, 0.6);
+	}
+	50% {
+		transform: scale(1.05);
+		box-shadow: 0 0 50px rgba(34, 197, 94, 0.8);
+	}
+}
+
+.animate-speak-pulse {
+	animation: speak-pulse 0.8s ease-in-out infinite;
+}
+
+/* Volume-reactive scaling (controlled via CSS custom property) */
+.volume-scale {
+	transform: scale(calc(1 + var(--volume, 0) * 0.2));
+	transition: transform 50ms ease-out;
+}
+
+/* Smooth transitions */
+.transition-all-smooth {
+	transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
