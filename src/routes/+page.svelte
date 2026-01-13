@@ -169,21 +169,37 @@
 		</div>
 	{/if}
 
-	<!-- Transcript log (debug) -->
+	<!-- Conversation Transcript -->
 	<div class="mt-8 w-full max-w-2xl">
-		<details class="bg-slate-900/50 rounded-lg border border-slate-700">
-			<summary class="px-4 py-2 cursor-pointer text-slate-400 text-sm">
-				Transcript Log ({transcript.length} entries)
-			</summary>
-			<div class="p-4 max-h-64 overflow-y-auto">
-				{#each transcript as entry, i}
-					<p class="text-slate-300 text-sm py-1 border-b border-slate-800">
-						<span class="text-slate-500">[{i + 1}]</span> {entry}
-					</p>
-				{:else}
-					<p class="text-slate-500 text-sm italic">No transcript yet...</p>
-				{/each}
-			</div>
-		</details>
+		<div class="bg-slate-900/50 rounded-lg border border-slate-700 p-4 min-h-[200px] max-h-[400px] overflow-y-auto">
+			{#each transcript as entry}
+				{#if entry.startsWith('You:')}
+					<!-- User message -->
+					<div class="flex justify-end mb-3">
+						<div class="bg-blue-600/30 border border-blue-500/40 rounded-lg px-4 py-2 max-w-[80%]">
+							<p class="text-blue-100 text-sm">{entry.replace('You: ', '')}</p>
+						</div>
+					</div>
+				{:else if entry.startsWith('AI:')}
+					<!-- AI message -->
+					<div class="flex justify-start mb-3">
+						<div class="bg-slate-700/50 border border-slate-600/40 rounded-lg px-4 py-2 max-w-[80%]">
+							<p class="text-slate-200 text-sm">{entry.replace('AI: ', '')}</p>
+						</div>
+					</div>
+				{:else if !entry.startsWith('[')}
+					<!-- Streaming AI response (no prefix yet) -->
+					<div class="flex justify-start mb-3">
+						<div class="bg-slate-700/50 border border-slate-600/40 rounded-lg px-4 py-2 max-w-[80%]">
+							<p class="text-slate-200 text-sm">{entry}</p>
+						</div>
+					</div>
+				{/if}
+			{:else}
+				<p class="text-slate-500 text-sm italic text-center py-8">
+					Tap the button to start a conversation...
+				</p>
+			{/each}
+		</div>
 	</div>
 </div>
