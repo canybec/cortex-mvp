@@ -3,37 +3,29 @@
  *
  * Manages the connection to Azure OpenAI Realtime API via WebSocket.
  * Includes "Thinking Tier" delegation to GPT-5.2 for complex queries.
+ * Injects knowledge graph context for "telepathic" awareness.
  */
 
 import { audioManager } from '$lib/audio/audioManager';
+import { getQuickContext } from '$lib/graphrag/context';
 
 export type ConnectionState = 'idle' | 'connecting' | 'connected' | 'listening' | 'speaking' | 'thinking' | 'error';
 
-// System prompt for Cortex with delegation instructions
-const SYSTEM_PROMPT = `You are Cortex, a sharp and concise executive assistant designed for people with ADHD.
+// System prompt for Cortex - buddy personality
+const SYSTEM_PROMPT = `You're George, a chill buddy who helps with life stuff.
 
-Your core principles:
-1. Keep ALL responses under 2 sentences unless explicitly asked for more detail
-2. Be direct - no filler words, no unnecessary pleasantries
-3. If asked to remember something, confirm briefly: "Got it."
-4. If asked a question, answer it directly without preamble
-5. If the user seems scattered, gently redirect to one task at a time
-6. Use clear, concrete language - avoid abstract concepts
-7. When giving instructions, use numbered steps
+First time meeting? Just say "Hey, I'm George" and ask their name. Keep it brief.
 
-DELEGATION PROTOCOL:
-When the user asks something that requires deep analysis, research, comparison, calculation, or complex reasoning, you MUST:
-1. Say exactly: "Let me think about that." (this exact phrase triggers the backend)
-2. Wait - the system will provide you with an analysis
-3. Read the analysis back naturally
+Key rules:
+- Match the energy. Short question = short answer. Big topic = more detail.
+- Most responses should be 1-2 sentences. Only go longer if they actually need it.
+- "Got it", "Yeah", "Hmm", "Cool" are valid responses when that's all that's needed.
+- Be real, not robotic. But also don't ramble.
+- If they're venting, listen. Don't immediately problem-solve.
 
-Trigger delegation for:
-- "analyze", "compare", "research", "calculate", "explain in detail"
-- Complex medical/technical questions
-- Multi-step planning requests
-- Anything requiring more than surface-level knowledge
+For complex stuff needing research: say "Let me think about that" and wait.
 
-You speak in a calm, confident tone. You are helpful but not chatty.`;
+Keep it tight. You're a buddy, not a podcast.`;
 
 interface RealtimeMessage {
 	type: string;
@@ -54,7 +46,7 @@ interface SessionConfig {
 		threshold: number;
 		prefix_padding_ms: number;
 		silence_duration_ms: number;
-	};
+	} | null;
 }
 
 class RealtimeStore {
@@ -121,18 +113,30 @@ class RealtimeStore {
 		console.log('WebSocket connected');
 		this.state = 'connected';
 
-		// Send session configuration
+		// Send session configuration with context
 		this.sendSessionUpdate();
 	}
 
 	/**
-	 * Send session configuration with system prompt
+	 * Send session configuration with system prompt and knowledge graph context
 	 */
-	private sendSessionUpdate(): void {
+	private async sendSessionUpdate(): Promise<void> {
+		// Get context from knowledge graph (if any exists)
+		let contextAugment = '';
+		try {
+			const context = await getQuickContext('default-user');
+			if (context) {
+				contextAugment = `\n\n${context}`;
+				console.log('Injected context:', context);
+			}
+		} catch (err) {
+			console.warn('Failed to get context:', err);
+		}
+
 		const sessionConfig: SessionConfig = {
 			modalities: ['text', 'audio'],
-			instructions: SYSTEM_PROMPT,
-			voice: 'alloy',
+			instructions: SYSTEM_PROMPT + contextAugment,
+			voice: 'ash',  // Warm, natural tone for George
 			input_audio_format: 'pcm16',
 			output_audio_format: 'pcm16',
 			input_audio_transcription: {
@@ -142,7 +146,7 @@ class RealtimeStore {
 				type: 'server_vad',
 				threshold: 0.5,
 				prefix_padding_ms: 300,
-				silence_duration_ms: 500
+				silence_duration_ms: 700  // Natural pause detection
 			}
 		};
 
@@ -307,6 +311,40 @@ class RealtimeStore {
 	}
 
 	/**
+	 * Send a text message (for typed input)
+	 */
+	sendTextMessage(text: string): void {
+		if (!text.trim() || this.ws?.readyState !== WebSocket.OPEN) return;
+
+		// Store as user query for thinking tier
+		this.lastUserQuery = text;
+		this.addTranscript(`You: ${text}`);
+		this.conversationContext.push(`You: ${text}`);
+
+		// Create a conversation item with the text
+		this.send({
+			type: 'conversation.item.create',
+			item: {
+				type: 'message',
+				role: 'user',
+				content: [
+					{
+						type: 'input_text',
+						text: text
+					}
+				]
+			}
+		});
+
+		// Trigger response generation
+		this.send({
+			type: 'response.create'
+		});
+
+		this.state = 'speaking';
+	}
+
+	/**
 	 * Inject a response for Realtime to speak
 	 */
 	private injectResponse(text: string): void {
@@ -368,6 +406,24 @@ class RealtimeStore {
 	}
 
 	/**
+	 * Commit audio buffer and trigger response (push-to-talk release)
+	 */
+	commitAudio(): void {
+		if (this.state !== 'listening') return;
+
+		// Stop capturing
+		audioManager.stopCapture();
+
+		// Commit the audio buffer
+		this.send({ type: 'input_audio_buffer.commit' });
+
+		// Trigger response
+		this.send({ type: 'response.create' });
+
+		this.state = 'speaking';
+	}
+
+	/**
 	 * Send audio data to the server
 	 */
 	private sendAudio(pcmData: ArrayBuffer): void {
@@ -402,6 +458,30 @@ class RealtimeStore {
 		// Reset state
 		this.state = 'connected';
 		this.addTranscript('[Interrupted]');
+	}
+
+	/**
+	 * Stop conversation completely (toggle off)
+	 */
+	stopConversation(): void {
+		// Stop audio
+		audioManager.stopCapture();
+		audioManager.stopPlayback();
+
+		// Only cancel if we're actively speaking/responding
+		if (this.ws?.readyState === WebSocket.OPEN) {
+			if (this.state === 'speaking' || this.state === 'thinking') {
+				this.send({ type: 'response.cancel' });
+			}
+			this.send({ type: 'input_audio_buffer.clear' });
+		}
+
+		// Clear pending thinking response
+		this.pendingThinkingResponse = null;
+		this.delegationTriggered = false;
+
+		// Reset state
+		this.state = 'connected';
 	}
 
 	/**
