@@ -2,7 +2,7 @@
  * Think API Endpoint
  *
  * Delegates complex analysis to GPT-5.2 for deeper reasoning.
- * Called by the Realtime layer when it detects a complex query.
+ * Now includes web search capability for factual queries.
  */
 
 import { json } from '@sveltejs/kit';
@@ -13,7 +13,78 @@ const AZURE_OPENAI_ENDPOINT = env.AZURE_OPENAI_ENDPOINT;
 const AZURE_OPENAI_API_KEY = env.AZURE_OPENAI_API_KEY;
 const THINK_MODEL = 'gpt-5.2'; // The sophisticated reasoning model
 
-export const POST: RequestHandler = async ({ request }) => {
+interface SearchResult {
+	title: string;
+	url: string;
+	snippet: string;
+}
+
+/**
+ * Determine if a query needs web search
+ */
+function needsWebSearch(query: string): boolean {
+	const searchTriggers = [
+		// Real-time data patterns
+		/\b(current|latest|recent|today|yesterday|this week|this month|this year)\b/i,
+		/\b(weather|temperature|forecast)\b/i,
+		/\b(stock|price|market|trading)\b/i,
+		/\b(news|headlines|announced)\b/i,
+
+		// Factual/research patterns
+		/\b(how much|how many|what is the|who is|when did|where is)\b/i,
+		/\b(statistics|data|numbers|percentage|rate)\b/i,
+		/\b(compare|comparison|vs|versus)\b/i,
+		/\b(research|study|studies|according to)\b/i,
+
+		// Location-specific
+		/\b(in \w+|near \w+|around \w+)\b.*\b(area|city|region|state)\b/i,
+
+		// Time-sensitive
+		/\b(last|past)\s+\d+\s+(days?|weeks?|months?|years?)\b/i
+	];
+
+	return searchTriggers.some(pattern => pattern.test(query));
+}
+
+/**
+ * Perform web search via our search API
+ */
+async function performSearch(query: string, baseUrl: string): Promise<SearchResult[]> {
+	try {
+		// Use internal API call
+		const response = await fetch(`${baseUrl}/api/search`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ query, count: 5 })
+		});
+
+		if (!response.ok) {
+			console.error('Search API failed:', response.statusText);
+			return [];
+		}
+
+		const data = await response.json();
+		return data.results || [];
+	} catch (err) {
+		console.error('Search error:', err);
+		return [];
+	}
+}
+
+/**
+ * Format search results for the LLM context
+ */
+function formatSearchContext(results: SearchResult[]): string {
+	if (results.length === 0) return '';
+
+	const formatted = results.map((r, i) =>
+		`[${i + 1}] ${r.title}\n${r.snippet}\nSource: ${r.url}`
+	).join('\n\n');
+
+	return `\n\n=== WEB SEARCH RESULTS ===\n${formatted}\n=== END SEARCH RESULTS ===\n\nUse the search results above to answer the user's question accurately. Cite sources when using specific data.`;
+}
+
+export const POST: RequestHandler = async ({ request, url }) => {
 	if (!AZURE_OPENAI_ENDPOINT || !AZURE_OPENAI_API_KEY) {
 		return json({ error: 'Server configuration error' }, { status: 500 });
 	}
@@ -25,11 +96,21 @@ export const POST: RequestHandler = async ({ request }) => {
 			return json({ error: 'Query is required' }, { status: 400 });
 		}
 
+		// Check if we need to search for real data
+		let searchContext = '';
+		if (needsWebSearch(query)) {
+			console.log('Query needs web search:', query);
+			const baseUrl = `${url.protocol}//${url.host}`;
+			const searchResults = await performSearch(query, baseUrl);
+			searchContext = formatSearchContext(searchResults);
+			console.log(`Found ${searchResults.length} search results`);
+		}
+
 		// Call GPT-5.2 via Azure OpenAI Chat Completions API
 		const endpoint = AZURE_OPENAI_ENDPOINT.replace(/\/$/, '');
-		const url = `${endpoint}/openai/deployments/${THINK_MODEL}/chat/completions?api-version=2024-10-01-preview`;
+		const apiUrl = `${endpoint}/openai/deployments/${THINK_MODEL}/chat/completions?api-version=2024-10-01-preview`;
 
-		const response = await fetch(url, {
+		const response = await fetch(apiUrl, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',
@@ -42,19 +123,20 @@ export const POST: RequestHandler = async ({ request }) => {
 						content: `You are Cortex's analytical backend. Provide clear, concise analysis.
 
 CRITICAL HONESTY RULES:
-- NEVER make up statistics, numbers, or data you don't actually know
-- If asked for real-time data (weather, stocks, current events, recent statistics), say: "I don't have access to real-time data for that. I can help you think through the question or suggest where to find that information."
-- Only provide specific numbers if you're confident they're accurate from your training data
-- When uncertain, say "approximately" or "I believe" and note the uncertainty
+- If web search results are provided, USE THEM to answer accurately
+- If search results are provided but don't fully answer the question, acknowledge the limitation
+- If NO search results are provided and you need real-time data, say: "I don't have access to real-time data for that specific query."
+- Only provide specific numbers if you have them from search results or are confident from training data
+- ALWAYS cite sources when using data from search results
 
 Guidelines:
 - Be thorough but concise (2-4 sentences for simple queries, more for complex)
-- Use concrete examples and numbers only when you're confident they're accurate
+- Use concrete examples and numbers when you have accurate data
 - Structure complex answers with brief bullet points
 - Your response will be read aloud, so avoid markdown formatting
-- No preamble - get straight to the answer`
+- No preamble - get straight to the answer${searchContext}`
 					},
-					...(context ? [{ role: 'assistant', content: `Recent conversation context: ${context}` }] : []),
+					...(context ? [{ role: 'assistant' as const, content: `Recent conversation context: ${context}` }] : []),
 					{
 						role: 'user',
 						content: query
@@ -74,7 +156,10 @@ Guidelines:
 		const data = await response.json();
 		const answer = data.choices?.[0]?.message?.content || 'I couldn\'t complete the analysis.';
 
-		return json({ answer });
+		return json({
+			answer,
+			searched: searchContext.length > 0
+		});
 
 	} catch (err) {
 		console.error('Think endpoint error:', err);
