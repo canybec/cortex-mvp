@@ -2,14 +2,14 @@
  * Realtime WebSocket Store for Cortex
  *
  * Manages the connection to Azure OpenAI Realtime API via WebSocket.
- * Uses the relay pattern: Client -> Azure Function -> Ephemeral Token -> Direct WebSocket
+ * Includes "Thinking Tier" delegation to GPT-5.2 for complex queries.
  */
 
 import { audioManager } from '$lib/audio/audioManager';
 
-export type ConnectionState = 'idle' | 'connecting' | 'connected' | 'listening' | 'speaking' | 'error';
+export type ConnectionState = 'idle' | 'connecting' | 'connected' | 'listening' | 'speaking' | 'thinking' | 'error';
 
-// System prompt for Cortex
+// System prompt for Cortex with delegation instructions
 const SYSTEM_PROMPT = `You are Cortex, a sharp and concise executive assistant designed for people with ADHD.
 
 Your core principles:
@@ -20,6 +20,18 @@ Your core principles:
 5. If the user seems scattered, gently redirect to one task at a time
 6. Use clear, concrete language - avoid abstract concepts
 7. When giving instructions, use numbered steps
+
+DELEGATION PROTOCOL:
+When the user asks something that requires deep analysis, research, comparison, calculation, or complex reasoning, you MUST:
+1. Say exactly: "Let me think about that." (this exact phrase triggers the backend)
+2. Wait - the system will provide you with an analysis
+3. Read the analysis back naturally
+
+Trigger delegation for:
+- "analyze", "compare", "research", "calculate", "explain in detail"
+- Complex medical/technical questions
+- Multi-step planning requests
+- Anything requiring more than surface-level knowledge
 
 You speak in a calm, confident tone. You are helpful but not chatty.`;
 
@@ -34,6 +46,9 @@ interface SessionConfig {
 	voice: string;
 	input_audio_format: string;
 	output_audio_format: string;
+	input_audio_transcription: {
+		model: string;
+	};
 	turn_detection: {
 		type: string;
 		threshold: number;
@@ -51,6 +66,8 @@ class RealtimeStore {
 
 	private ws: WebSocket | null = null;
 	private sessionId: string | null = null;
+	private lastUserQuery: string = '';
+	private conversationContext: string[] = [];
 
 	/**
 	 * Connect to Azure OpenAI Realtime API
@@ -114,6 +131,9 @@ class RealtimeStore {
 			voice: 'alloy',
 			input_audio_format: 'pcm16',
 			output_audio_format: 'pcm16',
+			input_audio_transcription: {
+				model: 'whisper-1'
+			},
 			turn_detection: {
 				type: 'server_vad',
 				threshold: 0.5,
@@ -148,24 +168,33 @@ class RealtimeStore {
 
 				case 'input_audio_buffer.speech_started':
 					this.state = 'listening';
-					this.addTranscript('[Listening...]');
 					break;
 
 				case 'input_audio_buffer.speech_stopped':
-					this.addTranscript('[Processing...]');
 					break;
 
 				case 'response.audio_transcript.delta':
-					// Real-time transcript of AI response
+					// Real-time transcript of AI response - check for delegation trigger
 					if (message.delta) {
-						this.appendToLastTranscript(message.delta as string);
+						const delta = message.delta as string;
+						this.appendToLastTranscript(delta);
+
+						// Check if AI is asking to think
+						this.checkForDelegation();
 					}
 					break;
 
 				case 'response.audio_transcript.done':
 					// Final transcript
 					if (message.transcript) {
-						this.addTranscript(`AI: ${message.transcript}`);
+						const transcript = message.transcript as string;
+						this.addTranscript(`AI: ${transcript}`);
+						this.conversationContext.push(`AI: ${transcript}`);
+
+						// Keep context manageable
+						if (this.conversationContext.length > 10) {
+							this.conversationContext = this.conversationContext.slice(-10);
+						}
 					}
 					break;
 
@@ -184,13 +213,18 @@ class RealtimeStore {
 
 				case 'response.done':
 					// Full response complete
-					this.state = 'connected';
+					if (this.state !== 'thinking') {
+						this.state = 'connected';
+					}
 					break;
 
 				case 'conversation.item.input_audio_transcription.completed':
 					// User's transcribed speech
 					if (message.transcript) {
-						this.addTranscript(`You: ${message.transcript}`);
+						const transcript = message.transcript as string;
+						this.lastUserQuery = transcript;
+						this.addTranscript(`You: ${transcript}`);
+						this.conversationContext.push(`You: ${transcript}`);
 					}
 					break;
 
@@ -206,6 +240,82 @@ class RealtimeStore {
 		} catch (err) {
 			console.error('Failed to parse message:', err);
 		}
+	}
+
+	/**
+	 * Check if AI response contains delegation trigger
+	 */
+	private checkForDelegation(): void {
+		const lastEntry = this.transcript[this.transcript.length - 1] || '';
+		const lowerEntry = lastEntry.toLowerCase();
+
+		// Check for delegation phrases
+		if (lowerEntry.includes('let me think') ||
+			lowerEntry.includes('let me analyze') ||
+			lowerEntry.includes('thinking about that')) {
+			this.triggerThinking();
+		}
+	}
+
+	/**
+	 * Trigger the thinking tier - call GPT-5.2
+	 */
+	private async triggerThinking(): Promise<void> {
+		if (this.state === 'thinking') return; // Prevent double-trigger
+
+		this.state = 'thinking';
+		this.addTranscript('[Thinking...]');
+
+		try {
+			const response = await fetch('/api/think', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					query: this.lastUserQuery,
+					context: this.conversationContext.slice(-5).join('\n')
+				})
+			});
+
+			if (!response.ok) {
+				throw new Error('Thinking failed');
+			}
+
+			const { answer } = await response.json();
+
+			// Inject the answer back to Realtime to speak
+			this.injectResponse(answer);
+
+		} catch (err) {
+			console.error('Thinking error:', err);
+			this.injectResponse("I had trouble analyzing that. Let me give you a simpler answer.");
+		}
+	}
+
+	/**
+	 * Inject a response for Realtime to speak
+	 */
+	private injectResponse(text: string): void {
+		// Create a conversation item with the analysis
+		this.send({
+			type: 'conversation.item.create',
+			item: {
+				type: 'message',
+				role: 'user',
+				content: [
+					{
+						type: 'input_text',
+						text: `[SYSTEM: Read this analysis to the user naturally] ${text}`
+					}
+				]
+			}
+		});
+
+		// Trigger response generation
+		this.send({
+			type: 'response.create'
+		});
+
+		this.state = 'speaking';
 	}
 
 	/**

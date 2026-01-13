@@ -3,7 +3,7 @@
 	import { browser } from '$app/environment';
 
 	// Define type inline to avoid importing the store module during SSR
-	type ConnectionState = 'idle' | 'connecting' | 'connected' | 'listening' | 'speaking' | 'error';
+	type ConnectionState = 'idle' | 'connecting' | 'connected' | 'listening' | 'speaking' | 'thinking' | 'error';
 
 	// Reactive state
 	let connectionState = $state<ConnectionState>('idle');
@@ -78,6 +78,8 @@
 				return `${base} bg-blue-600/30 border-4 border-blue-400 animate-pulse-glow volume-scale`;
 			case 'speaking':
 				return `${base} bg-green-600/30 border-4 border-green-400 animate-speak-pulse`;
+			case 'thinking':
+				return `${base} bg-purple-600/30 border-4 border-purple-400 animate-pulse`;
 			case 'error':
 				return `${base} bg-red-600/20 border-4 border-red-500/50 hover:bg-red-600/30`;
 			default:
@@ -95,6 +97,8 @@
 				return 'Listening...';
 			case 'speaking':
 				return 'Speaking...';
+			case 'thinking':
+				return 'Thinking...';
 			case 'error':
 				return 'Retry';
 			default:
@@ -112,6 +116,8 @@
 				return '🎤';
 			case 'speaking':
 				return '🔊';
+			case 'thinking':
+				return '🧠';
 			case 'error':
 				return '⚠️';
 			default:
