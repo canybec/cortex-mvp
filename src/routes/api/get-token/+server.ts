@@ -29,14 +29,12 @@ export const GET: RequestHandler = async () => {
 		// Construct the WebSocket URL for Azure OpenAI Realtime API
 		// Format: wss://{resource}.openai.azure.com/openai/realtime?api-version=2024-10-01-preview&deployment={deployment}
 		const endpoint = AZURE_OPENAI_ENDPOINT.replace('https://', 'wss://').replace(/\/$/, '');
-		const wsUrl = `${endpoint}/openai/realtime?api-version=2024-10-01-preview&deployment=${AZURE_OPENAI_DEPLOYMENT}`;
 
-		// For Azure OpenAI, we return the API key as the "token"
-		// In production, you might want to implement ephemeral token exchange
-		// if Azure supports it for the Realtime API
+		// Include API key in URL for Azure authentication (WebSocket can't use headers from browser)
+		const wsUrl = `${endpoint}/openai/realtime?api-version=2024-10-01-preview&deployment=${AZURE_OPENAI_DEPLOYMENT}&api-key=${AZURE_OPENAI_API_KEY}`;
+
 		return json({
-			url: wsUrl,
-			token: AZURE_OPENAI_API_KEY
+			url: wsUrl
 		});
 
 	} catch (err) {

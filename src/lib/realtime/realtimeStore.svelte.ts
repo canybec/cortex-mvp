@@ -70,10 +70,10 @@ class RealtimeStore {
 				throw new Error(`Failed to get token: ${tokenResponse.statusText}`);
 			}
 
-			const { url, token } = await tokenResponse.json();
+			const { url } = await tokenResponse.json();
 
-			// Step 2: Establish WebSocket connection
-			this.ws = new WebSocket(url, ['realtime', `openai-insecure-api-key.${token}`]);
+			// Step 2: Establish WebSocket connection (auth is in URL for Azure)
+			this.ws = new WebSocket(url);
 
 			this.ws.onopen = () => this.handleOpen();
 			this.ws.onmessage = (event) => this.handleMessage(event);
