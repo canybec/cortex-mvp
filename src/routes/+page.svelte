@@ -9,6 +9,12 @@
 	type ModelType = 'gpt-4o-realtime' | 'gpt-5.2' | null;
 	type ProcessingMode = 'idle' | 'realtime' | 'thinking' | 'searching';
 
+	// Password gate
+	const APP_PASSWORD = 'Gangboy16';
+	let isAuthenticated = $state(false);
+	let passwordInput = $state('');
+	let passwordError = $state(false);
+
 	// Reactive state
 	let connectionState = $state<ConnectionState>('idle');
 	let transcript = $state<string[]>([]);
@@ -23,6 +29,24 @@
 	let knowledgeActive = $state(false);
 	let knowledgeEntities = $state(0);
 	let isSearching = $state(false);
+
+	// Check password
+	function handlePasswordSubmit() {
+		if (passwordInput === APP_PASSWORD) {
+			isAuthenticated = true;
+			passwordError = false;
+			localStorage.setItem('cortex-auth', 'true');
+		} else {
+			passwordError = true;
+			passwordInput = '';
+		}
+	}
+
+	function handlePasswordKeydown(e: KeyboardEvent) {
+		if (e.key === 'Enter') {
+			handlePasswordSubmit();
+		}
+	}
 
 	// Audio visualization state
 	let volumeHistory = $state<number[]>(Array(12).fill(0));
@@ -137,6 +161,11 @@
 	}
 
 	onMount(async () => {
+		// Check for existing auth
+		if (localStorage.getItem('cortex-auth') === 'true') {
+			isAuthenticated = true;
+		}
+
 		// Dynamically import the store only on client
 		const module = await import('$lib/realtime/realtimeStore.svelte');
 		realtimeStore = module.realtimeStore;
@@ -228,6 +257,39 @@
 	<title>Cortex - ADHD Voice Assistant</title>
 </svelte:head>
 
+{#if !isAuthenticated}
+	<!-- Password Gate -->
+	<div class="flex flex-col items-center justify-center min-h-screen p-4 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
+		<div class="w-full max-w-sm">
+			<h1 class="text-3xl font-bold bg-gradient-to-r from-cyan-400 via-blue-400 to-purple-400 bg-clip-text text-transparent text-center mb-2">
+				Cortex
+			</h1>
+			<p class="text-slate-500 text-sm text-center mb-8">Enter password to continue</p>
+
+			<div class="bg-slate-900/50 border border-slate-700/50 rounded-xl p-6 backdrop-blur-sm">
+				<input
+					type="password"
+					bind:value={passwordInput}
+					onkeydown={handlePasswordKeydown}
+					placeholder="Password"
+					class="w-full bg-slate-800/50 border border-slate-700/50 rounded-lg px-4 py-3 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/30 mb-4"
+					autofocus
+				/>
+
+				{#if passwordError}
+					<p class="text-red-400 text-sm mb-4 text-center">Incorrect password</p>
+				{/if}
+
+				<button
+					onclick={handlePasswordSubmit}
+					class="w-full py-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-medium rounded-lg transition-all"
+				>
+					Enter
+				</button>
+			</div>
+		</div>
+	</div>
+{:else}
 <div class="flex flex-col items-center justify-center min-h-screen p-4 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
 	<!-- Header -->
 	<header class="mb-4 text-center">
@@ -484,6 +546,7 @@
 		{showKnowledgeSpace ? 'Hide' : 'Show'} Knowledge Space
 	</button>
 </div>
+{/if}
 
 <style>
 	@keyframes spin {
