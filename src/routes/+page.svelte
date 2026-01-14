@@ -245,7 +245,7 @@
 			{knowledgeActive}
 			{knowledgeEntities}
 			{isSearching}
-			visible={mounted && connectionState !== 'idle'}
+			visible={mounted}
 		/>
 	</div>
 
