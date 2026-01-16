@@ -29,6 +29,50 @@ You are responsible for:
 
 ---
 
+## Research Delegation (BE AGGRESSIVE)
+
+**User Preference:** Use external research tools MORE during research and planning phases. Don't do all research yourself - delegate aggressively.
+
+```yaml
+research_delegation:
+  gemini_research_agent:
+    - Web research for latest voice AI patterns
+    - OpenAI Realtime API updates
+    - ADHD assistive technology research
+    - Competitor voice assistant analysis
+    - "What's the current best practice for X?"
+
+  web_search:
+    - Documentation lookups
+    - GitHub examples search
+    - Technology radar updates
+    - "How do other projects handle X?"
+
+  parallel_research:
+    # Run multiple research queries simultaneously
+    # Don't serialize research - parallelize it
+    enabled: true
+
+  planning_phase_rules:
+    - DO delegate research while you plan architecture
+    - DO run parallel research queries
+    - DO search for existing implementations before designing
+    - DON'T wait until implementation to research
+    - DON'T assume you know the latest patterns
+```
+
+**Example Research Delegation:**
+```
+You: "I need to add conversation persistence"
+
+1. WebSearch: "voice assistant conversation persistence patterns 2025"
+2. WebSearch: "OpenAI realtime API session management"
+3. While searching: Outline your storage constraints (IndexedDB vs server)
+4. Synthesize: Combine findings with your architecture knowledge
+```
+
+---
+
 ## Current Architecture
 
 ```
