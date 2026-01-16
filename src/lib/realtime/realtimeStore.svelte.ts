@@ -85,6 +85,12 @@ class RealtimeStore {
 	private pendingThinkingResponse: string | null = null;
 	private delegationTriggered: boolean = false;
 
+	// Reconnection state
+	private reconnectAttempts = 0;
+	private maxReconnectAttempts = 5;
+	private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+	private intentionalDisconnect = false;
+
 	/**
 	 * Connect to Azure OpenAI Realtime API
 	 */
@@ -298,10 +304,33 @@ class RealtimeStore {
 		const lastEntry = this.transcript[this.transcript.length - 1] || '';
 		const lowerEntry = lastEntry.toLowerCase();
 
-		// Check for delegation phrases
-		if (lowerEntry.includes('let me think') ||
-			lowerEntry.includes('let me analyze') ||
-			lowerEntry.includes('thinking about that')) {
+		// Extended delegation phrases - triggers thinking tier
+		const delegationPhrases = [
+			// Analysis triggers
+			'let me think',
+			'let me analyze',
+			'thinking about that',
+			'give me a moment',
+			'let me dig into',
+			'let me look into',
+			'let me research',
+			'let me check',
+			// Complex query indicators
+			'that\'s a good question',
+			'that\'s interesting',
+			'hmm, let me',
+			'actually, let me',
+			// Explicit research triggers
+			'i\'ll need to search',
+			'let me find out',
+			'let me look that up',
+			// Depth indicators
+			'deeper dive',
+			'more detail',
+			'break this down'
+		];
+
+		if (delegationPhrases.some(phrase => lowerEntry.includes(phrase))) {
 			this.delegationTriggered = true;
 			this.triggerThinking();
 		}
@@ -427,12 +456,50 @@ class RealtimeStore {
 	 */
 	private handleClose(event: CloseEvent): void {
 		console.log('WebSocket closed:', event.code, event.reason);
-		this.state = 'idle';
 		this.ws = null;
 
+		// Don't reconnect if this was intentional (user disconnected)
+		if (this.intentionalDisconnect) {
+			this.state = 'idle';
+			this.intentionalDisconnect = false;
+			return;
+		}
+
+		// Abnormal close - attempt reconnection
 		if (event.code !== 1000) {
 			this.error = `Connection closed: ${event.reason || 'Unknown reason'}`;
+			this.attemptReconnect();
+		} else {
+			this.state = 'idle';
 		}
+	}
+
+	/**
+	 * Attempt to reconnect with exponential backoff
+	 */
+	private attemptReconnect(): void {
+		if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+			this.state = 'error';
+			this.error = 'Max reconnection attempts reached. Please refresh the page.';
+			this.addTranscript('[Connection lost. Please refresh to reconnect.]');
+			return;
+		}
+
+		this.reconnectAttempts++;
+		const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts - 1), 30000); // Max 30s
+
+		console.log(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+		this.addTranscript(`[Reconnecting... (attempt ${this.reconnectAttempts})]`);
+
+		this.reconnectTimeout = setTimeout(() => {
+			this.state = 'idle'; // Reset state to allow connect
+			this.connect().then(() => {
+				if (this.state === 'connected') {
+					this.reconnectAttempts = 0;
+					this.addTranscript('[Reconnected successfully]');
+				}
+			});
+		}, delay);
 	}
 
 	/**
@@ -532,6 +599,16 @@ class RealtimeStore {
 	 * Disconnect from the server
 	 */
 	disconnect(): void {
+		// Mark as intentional to prevent auto-reconnect
+		this.intentionalDisconnect = true;
+
+		// Clear any pending reconnection
+		if (this.reconnectTimeout) {
+			clearTimeout(this.reconnectTimeout);
+			this.reconnectTimeout = null;
+		}
+		this.reconnectAttempts = 0;
+
 		audioManager.destroy();
 
 		if (this.ws) {
