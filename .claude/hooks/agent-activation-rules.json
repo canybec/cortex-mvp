@@ -1,0 +1,118 @@
+{
+  "strategicAgents": {
+    "chingi": {
+      "type": "agent",
+      "subagent_type": "chief-engineer",
+      "enforcement": "suggest",
+      "priority": "high",
+      "description": "Chief Engineer (Chingi) - ecosystem orchestrator, architecture decisions, cross-repo knowledge sync",
+      "promptTriggers": {
+        "keywords": [
+          "chingi",
+          "chief engineer",
+          "architect",
+          "ecosystem",
+          "system review",
+          "knowledge sync",
+          "cross-repo",
+          "improve",
+          "refactor"
+        ],
+        "intentPatterns": [
+          "chingi.*?(help|review|check|audit|improve)",
+          "(architect|ecosystem|system).*?(review|improve|audit)",
+          "cross.*?repo.*?sync",
+          "(knowledge|learning).*?(sync|update|capture)",
+          "(refactor|improve|optimize).*?(architecture|system)"
+        ]
+      },
+      "fileTriggers": {
+        "pathPatterns": [
+          ".claude/agents/**/*.md"
+        ],
+        "contentPatterns": []
+      },
+      "crossRepoSync": {
+        "siblingRepos": [
+          "/home/canybec/agentloft/agentloft2/shared/knowledge/",
+          "/home/canybec/medicare/shared/knowledge/"
+        ],
+        "triggers": ["session_start", "before_major_feature", "on_learning_capture", "30_day_failsafe"],
+        "message": "Check sibling repos for reusable patterns before implementing new features"
+      },
+      "activationMessage": "🛠️ Consider using Chingi (chief-engineer) for architecture decisions, refactoring, or checking sibling repos for patterns"
+    }
+  },
+  "developmentAgents": {
+    "sveltekit-engineer": {
+      "type": "suggest",
+      "enforcement": "suggest",
+      "priority": "medium",
+      "description": "SvelteKit best practices for voice app development",
+      "promptTriggers": {
+        "keywords": [
+          "svelte",
+          "sveltekit",
+          "component",
+          "route",
+          "store",
+          "rune"
+        ],
+        "intentPatterns": [
+          "(create|build|add).*?(component|page|route)",
+          "svelte.*?(best.*?practice|pattern)",
+          "(state|store).*?management"
+        ]
+      },
+      "fileTriggers": {
+        "pathPatterns": [
+          "src/**/*.svelte",
+          "src/**/*.ts"
+        ],
+        "contentPatterns": []
+      },
+      "activationMessage": "⚡ Consider SvelteKit patterns for component design and state management"
+    },
+    "realtime-api-specialist": {
+      "type": "suggest",
+      "enforcement": "suggest",
+      "priority": "medium",
+      "description": "Azure OpenAI Realtime API patterns for voice interaction",
+      "promptTriggers": {
+        "keywords": [
+          "realtime",
+          "websocket",
+          "audio",
+          "voice",
+          "latency",
+          "streaming"
+        ],
+        "intentPatterns": [
+          "(realtime|voice).*?(api|interaction)",
+          "(websocket|audio).*?(stream|connection)",
+          "latency.*?(reduce|optimize)"
+        ]
+      },
+      "fileTriggers": {
+        "pathPatterns": [
+          "src/**/*realtime*",
+          "src/**/*audio*"
+        ],
+        "contentPatterns": [
+          "WebSocket",
+          "AudioWorklet",
+          "PCM"
+        ]
+      },
+      "activationMessage": "🎤 Consider realtime API patterns for voice interaction optimization"
+    }
+  },
+  "globalSettings": {
+    "enableAutoActivation": true,
+    "verbosity": "concise",
+    "showPriority": true,
+    "showEnforcement": true,
+    "maxSuggestionsPerPrompt": 2,
+    "groupByWorkflow": false
+  }
+}
