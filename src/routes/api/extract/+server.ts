@@ -128,8 +128,7 @@ export const POST: RequestHandler = async ({ request }) => {
 			const errorText = await response.text();
 			console.error('Extraction API error:', response.status, errorText);
 			console.error('Using model:', EXTRACT_MODEL, 'at endpoint:', endpoint);
-			// Return actual error for debugging
-			return json({ entities: [], relationships: [], error: `${response.status}: ${errorText.substring(0, 200)}` }, { status: 200 });
+			return json({ entities: [], relationships: [] }, { status: 200 });
 		}
 
 		const data = await response.json();
@@ -137,7 +136,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
 		if (!content) {
 			console.error('No content in extraction response:', JSON.stringify(data));
-			return json({ entities: [], relationships: [], debug: 'no content' }, { status: 200 });
+			return json({ entities: [], relationships: [] }, { status: 200 });
 		}
 
 		console.log('Extraction response:', content.substring(0, 200));
@@ -155,14 +154,16 @@ export const POST: RequestHandler = async ({ request }) => {
 			extracted = JSON.parse(jsonContent);
 		} catch (parseErr) {
 			console.error('JSON parse error:', parseErr, 'Content:', jsonContent.substring(0, 300));
-			return json({ entities: [], relationships: [], debug: 'parse error', raw: jsonContent.substring(0, 100) }, { status: 200 });
+			return json({ entities: [], relationships: [] }, { status: 200 });
 		}
 
 		// Validate and sanitize the output
+		// Filter out "User" entity as it's redundant (implied in all messages)
 		const validEntities = (extracted.entities || []).filter(
 			(e): e is ExtractedEntity =>
 				typeof e.name === 'string' &&
 				e.name.length > 0 &&
+				e.name.toLowerCase() !== 'user' &&
 				isValidEntityType(e.type)
 		);
 

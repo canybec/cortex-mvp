@@ -8,6 +8,7 @@
 
 import { audioManager } from '$lib/audio/audioManager';
 import { getQuickContext } from '$lib/graphrag/context';
+import { extractFromText } from '$lib/graphrag/extraction';
 
 export type ConnectionState = 'idle' | 'connecting' | 'connected' | 'listening' | 'speaking' | 'thinking' | 'error';
 
@@ -280,6 +281,9 @@ class RealtimeStore {
 						this.lastUserQuery = transcript;
 						this.addTranscript(`You: ${transcript}`);
 						this.conversationContext.push(`You: ${transcript}`);
+
+						// Extract entities in background (don't block conversation)
+						this.extractEntities(transcript);
 					}
 					break;
 
@@ -382,6 +386,31 @@ class RealtimeStore {
 	}
 
 	/**
+	 * Extract entities from user message in background
+	 * Results are stored in graphStore and trigger UI updates via events
+	 */
+	private async extractEntities(text: string): Promise<void> {
+		// Skip very short messages
+		if (text.length < 15) return;
+
+		try {
+			const result = await extractFromText(text);
+
+			// Update knowledge entity count in status
+			const { graphStore } = await import('$lib/graphrag/cosmos');
+			const snapshot = await graphStore.getGraphSnapshot();
+			this.knowledgeEntities = snapshot.entities.length;
+			this.knowledgeActive = snapshot.entities.length > 0;
+
+			if (result.entities.length > 0 || result.relationships.length > 0) {
+				console.log(`Extracted ${result.entities.length} entities, ${result.relationships.length} relationships`);
+			}
+		} catch (err) {
+			console.error('Entity extraction failed:', err);
+		}
+	}
+
+	/**
 	 * Send a text message (for typed input)
 	 */
 	sendTextMessage(text: string): void {
@@ -391,6 +420,9 @@ class RealtimeStore {
 		this.lastUserQuery = text;
 		this.addTranscript(`You: ${text}`);
 		this.conversationContext.push(`You: ${text}`);
+
+		// Extract entities in background
+		this.extractEntities(text);
 
 		// Create a conversation item with the text
 		this.send({
