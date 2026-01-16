@@ -6,7 +6,7 @@
 
 	// Define type inline to avoid importing the store module during SSR
 	type ConnectionState = 'idle' | 'connecting' | 'connected' | 'listening' | 'speaking' | 'thinking' | 'error';
-	type ModelType = 'gpt-4o-realtime' | 'gpt-5.2' | null;
+	type ModelType = 'gpt-4o-realtime' | 'thinking' | null;
 	type ProcessingMode = 'idle' | 'realtime' | 'thinking' | 'searching';
 
 	// Password gate

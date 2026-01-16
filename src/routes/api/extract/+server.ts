@@ -9,9 +9,10 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
 
-const AZURE_OPENAI_ENDPOINT = env.AZURE_OPENAI_ENDPOINT;
-const AZURE_OPENAI_API_KEY = env.AZURE_OPENAI_API_KEY;
-const EXTRACT_MODEL = 'gpt-4o-mini'; // Fast, cheap model for extraction
+// Support separate endpoint/key for chat models (may be different Azure resource)
+const AZURE_CHAT_ENDPOINT = env.AZURE_CHAT_ENDPOINT || env.AZURE_OPENAI_ENDPOINT;
+const AZURE_CHAT_KEY = env.AZURE_CHAT_KEY || env.AZURE_OPENAI_API_KEY;
+const EXTRACT_MODEL = env.AZURE_CHAT_MODEL || 'gpt-4o';
 
 // Schema types for extraction output
 type EntityType = 'person' | 'project' | 'task' | 'event' | 'place' | 'topic' | 'emotion' | 'habit';
@@ -80,8 +81,8 @@ OUTPUT: Return ONLY valid JSON matching this exact structure:
 If no entities found, return {"entities": [], "relationships": []}`;
 
 export const POST: RequestHandler = async ({ request }) => {
-	if (!AZURE_OPENAI_ENDPOINT || !AZURE_OPENAI_API_KEY) {
-		console.error('Missing Azure OpenAI configuration');
+	if (!AZURE_CHAT_ENDPOINT || !AZURE_CHAT_KEY) {
+		console.error('Missing Azure Chat configuration (AZURE_CHAT_ENDPOINT/KEY or AZURE_OPENAI_ENDPOINT/KEY)');
 		return json({ entities: [], relationships: [] }, { status: 200 });
 	}
 
@@ -98,14 +99,14 @@ export const POST: RequestHandler = async ({ request }) => {
 		}
 
 		// Call GPT for entity extraction
-		const endpoint = AZURE_OPENAI_ENDPOINT.replace(/\/$/, '');
-		const apiUrl = `${endpoint}/openai/deployments/${EXTRACT_MODEL}/chat/completions?api-version=2024-10-01-preview`;
+		const endpoint = AZURE_CHAT_ENDPOINT.replace(/\/$/, '');
+		const apiUrl = `${endpoint}/openai/deployments/${EXTRACT_MODEL}/chat/completions?api-version=2024-12-01-preview`;
 
 		const response = await fetch(apiUrl, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',
-				'api-key': AZURE_OPENAI_API_KEY
+				'api-key': AZURE_CHAT_KEY
 			},
 			body: JSON.stringify({
 				messages: [
@@ -118,28 +119,44 @@ export const POST: RequestHandler = async ({ request }) => {
 						content: `Extract entities and relationships from this message:\n\n"${text}"`
 					}
 				],
-				max_tokens: 1000,
-				temperature: 0.1, // Low temperature for consistent extraction
-				response_format: { type: 'json_object' }
+				max_completion_tokens: 1000
+				// Note: gpt-5.2 only supports default temperature (1)
 			})
 		});
 
 		if (!response.ok) {
 			const errorText = await response.text();
-			console.error('Extraction API error:', errorText);
-			return json({ entities: [], relationships: [] }, { status: 200 });
+			console.error('Extraction API error:', response.status, errorText);
+			console.error('Using model:', EXTRACT_MODEL, 'at endpoint:', endpoint);
+			// Return actual error for debugging
+			return json({ entities: [], relationships: [], error: `${response.status}: ${errorText.substring(0, 200)}` }, { status: 200 });
 		}
 
 		const data = await response.json();
 		const content = data.choices?.[0]?.message?.content;
 
 		if (!content) {
-			console.error('No content in extraction response');
-			return json({ entities: [], relationships: [] }, { status: 200 });
+			console.error('No content in extraction response:', JSON.stringify(data));
+			return json({ entities: [], relationships: [], debug: 'no content' }, { status: 200 });
 		}
 
-		// Parse the JSON response
-		const extracted: ExtractionResponse = JSON.parse(content);
+		console.log('Extraction response:', content.substring(0, 200));
+
+		// Parse the JSON response - handle potential markdown wrapping
+		let jsonContent = content;
+		if (content.includes('```json')) {
+			jsonContent = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+		} else if (content.includes('```')) {
+			jsonContent = content.replace(/```\n?/g, '').trim();
+		}
+
+		let extracted: ExtractionResponse;
+		try {
+			extracted = JSON.parse(jsonContent);
+		} catch (parseErr) {
+			console.error('JSON parse error:', parseErr, 'Content:', jsonContent.substring(0, 300));
+			return json({ entities: [], relationships: [], debug: 'parse error', raw: jsonContent.substring(0, 100) }, { status: 200 });
+		}
 
 		// Validate and sanitize the output
 		const validEntities = (extracted.entities || []).filter(

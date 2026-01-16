@@ -50,7 +50,7 @@ interface SessionConfig {
 }
 
 // Model identifiers
-export type ModelType = 'gpt-4o-realtime' | 'gpt-5.2' | null;
+export type ModelType = 'gpt-4o-realtime' | 'thinking' | null;
 export type ProcessingMode = 'idle' | 'realtime' | 'thinking' | 'searching';
 
 // System status for UI display
@@ -344,7 +344,7 @@ class RealtimeStore {
 		if (this.state === 'thinking') return; // Prevent double-trigger
 
 		this.state = 'thinking';
-		this.activeModel = 'gpt-5.2';
+		this.activeModel = 'thinking';
 		this.processingMode = 'thinking';
 		this.addTranscript('[Thinking...]');
 

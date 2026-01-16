@@ -9,9 +9,10 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
 
-const AZURE_OPENAI_ENDPOINT = env.AZURE_OPENAI_ENDPOINT;
-const AZURE_OPENAI_API_KEY = env.AZURE_OPENAI_API_KEY;
-const THINK_MODEL = 'gpt-5.2'; // The sophisticated reasoning model
+// Support separate endpoint/key for chat models (may be different Azure resource)
+const AZURE_CHAT_ENDPOINT = env.AZURE_CHAT_ENDPOINT || env.AZURE_OPENAI_ENDPOINT;
+const AZURE_CHAT_KEY = env.AZURE_CHAT_KEY || env.AZURE_OPENAI_API_KEY;
+const THINK_MODEL = env.AZURE_CHAT_MODEL || 'gpt-4o';
 
 interface SearchResult {
 	title: string;
@@ -85,7 +86,7 @@ function formatSearchContext(results: SearchResult[]): string {
 }
 
 export const POST: RequestHandler = async ({ request, url }) => {
-	if (!AZURE_OPENAI_ENDPOINT || !AZURE_OPENAI_API_KEY) {
+	if (!AZURE_CHAT_ENDPOINT || !AZURE_CHAT_KEY) {
 		return json({ error: 'Server configuration error' }, { status: 500 });
 	}
 
@@ -106,15 +107,15 @@ export const POST: RequestHandler = async ({ request, url }) => {
 			console.log(`Found ${searchResults.length} search results`);
 		}
 
-		// Call GPT-5.2 via Azure OpenAI Chat Completions API
-		const endpoint = AZURE_OPENAI_ENDPOINT.replace(/\/$/, '');
-		const apiUrl = `${endpoint}/openai/deployments/${THINK_MODEL}/chat/completions?api-version=2024-10-01-preview`;
+		// Call chat model via Azure OpenAI Chat Completions API
+		const endpoint = AZURE_CHAT_ENDPOINT.replace(/\/$/, '');
+		const apiUrl = `${endpoint}/openai/deployments/${THINK_MODEL}/chat/completions?api-version=2024-12-01-preview`;
 
 		const response = await fetch(apiUrl, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',
-				'api-key': AZURE_OPENAI_API_KEY
+				'api-key': AZURE_CHAT_KEY
 			},
 			body: JSON.stringify({
 				messages: [
@@ -142,14 +143,14 @@ Guidelines:
 						content: query
 					}
 				],
-				max_tokens: 500,
-				temperature: 0.7
+				max_completion_tokens: 500
+				// Note: gpt-5.2 only supports default temperature (1)
 			})
 		});
 
 		if (!response.ok) {
 			const errorText = await response.text();
-			console.error('GPT-5.2 error:', errorText);
+			console.error('Chat model error:', errorText);
 			return json({ error: 'Analysis failed' }, { status: 500 });
 		}
 

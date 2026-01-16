@@ -30,10 +30,10 @@
 					gradient: 'from-cyan-500 to-blue-500',
 					glow: 'shadow-cyan-500/50'
 				};
-			case 'gpt-5.2':
+			case 'thinking':
 				return {
 					label: 'Deep Think',
-					sublabel: 'gpt-5.2',
+					sublabel: 'analyzing',
 					color: '#8b5cf6',
 					gradient: 'from-violet-500 to-purple-500',
 					glow: 'shadow-violet-500/50'
