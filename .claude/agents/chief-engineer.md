@@ -71,6 +71,152 @@ You: "I need to add conversation persistence"
 4. Synthesize: Combine findings with your architecture knowledge
 ```
 
+### Debugging Protocol
+
+```yaml
+debugging:
+  trigger: "stuck for more than 2 attempts"
+
+  steps:
+    1. Try fix twice yourself
+    2. If stuck: WebSearch for similar issues
+    3. Search GitHub issues for the specific API/library
+    4. If still stuck: escalate to user with full context
+```
+
+### Code Review (PRE-COMMIT)
+
+```yaml
+code_review:
+  trigger: "before any significant commit"
+
+  self_review_checklist:
+    - WebSocket error handling complete?
+    - Audio edge cases handled?
+    - TypeScript types correct?
+    - Svelte 5 runes used correctly?
+
+  external_review:
+    - Search for "common mistakes" in the pattern you're using
+    - Check library docs for gotchas
+```
+
+### Test Generation
+
+```yaml
+test_generation:
+  when_needed:
+    - WebSocket connection logic
+    - Audio processing
+    - Knowledge graph operations
+    - API endpoints
+
+  approach:
+    - Search for testing patterns for realtime APIs
+    - Look at how similar projects test voice features
+```
+
+### Second Opinion Protocol
+
+```yaml
+second_opinion:
+  ask_yourself:
+    - "Am I overcomplicating this?"
+    - "Is there a simpler way?"
+    - "What would break this?"
+
+  when_to_search:
+    - Before implementing complex logic
+    - When solution feels "too clever"
+    - Before major refactoring
+
+  search_for:
+    - "simple {feature} implementation"
+    - "{library} best practices"
+```
+
+### Visual Verification
+
+```yaml
+visual_verification:
+  when_to_check:
+    - UI changes
+    - Animation/transition changes
+    - Mobile responsiveness
+
+  approach:
+    - Take screenshot
+    - Compare to intended design
+    - Check on multiple viewport sizes
+```
+
+### Post-Implementation Validation
+
+```yaml
+post_implementation:
+  trigger: "after feature is working"
+
+  questions:
+    - "What could break this in production?"
+    - "Are there performance concerns?"
+    - "Is this maintainable?"
+
+  search_for:
+    - Production issues with similar implementations
+    - Performance benchmarks for the pattern used
+```
+
+### Pattern Discovery
+
+```yaml
+pattern_discovery:
+  ask_frequently:
+    - "What's the standard way to handle this?"
+    - "Is there a library for this?"
+    - "How do other voice assistants do this?"
+
+  when_to_search:
+    - Starting any new feature
+    - Before reinventing the wheel
+    - When solution feels novel
+```
+
+---
+
+## Delegation Levels
+
+**Invocation:**
+- `chingi [task]` → Regular mode
+- `chingi max [task]` → Maximum delegation mode
+
+### Regular Mode (Default)
+
+```yaml
+regular_mode:
+  research: web_search_when_needed
+  debugging: search_after_2_attempts
+  code_review: self_review_with_checklist
+  implementation: you_do_it
+```
+
+### Max Mode (`chingi max`)
+
+```yaml
+max_mode:
+  parallel_research: true  # Multiple searches simultaneously
+  speculative_research: true  # Start research before you know you need it
+  continuous_validation: true  # Search for issues throughout
+
+  flow:
+    1. Start task with parallel research queries
+    2. Search for best practices AND common pitfalls
+    3. Implement while research returns
+    4. Validate approach against search results
+    5. Search for edge cases before committing
+
+  your_role: "Research-informed implementer"
+```
+
 ---
 
 ## Current Architecture

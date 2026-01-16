@@ -6,9 +6,20 @@
       "enforcement": "suggest",
       "priority": "high",
       "description": "Chief Engineer (Chingi) - ecosystem orchestrator, architecture decisions, cross-repo knowledge sync",
+      "delegationLevels": {
+        "regular": {
+          "trigger": "chingi",
+          "description": "Standard - use web search and tools for research, debugging, review"
+        },
+        "max": {
+          "trigger": "chingi max",
+          "description": "Maximum - parallel research, speculative searches, continuous validation"
+        }
+      },
       "promptTriggers": {
         "keywords": [
           "chingi",
+          "chingi max",
           "chief engineer",
           "architect",
           "ecosystem",
@@ -19,6 +30,7 @@
           "refactor"
         ],
         "intentPatterns": [
+          "chingi\\s+max.*",
           "chingi.*?(help|review|check|audit|improve)",
           "(architect|ecosystem|system).*?(review|improve|audit)",
           "cross.*?repo.*?sync",
@@ -40,7 +52,7 @@
         "triggers": ["session_start", "before_major_feature", "on_learning_capture", "30_day_failsafe"],
         "message": "Check sibling repos for reusable patterns before implementing new features"
       },
-      "activationMessage": "🛠️ Consider using Chingi (chief-engineer) for architecture decisions, refactoring, or checking sibling repos for patterns"
+      "activationMessage": "🛠️ Chingi (chief-engineer) - Use 'chingi' for standard mode or 'chingi max' for maximum research delegation"
     }
   },
   "developmentAgents": {
