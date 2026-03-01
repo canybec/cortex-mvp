@@ -82,9 +82,10 @@ class RealtimeStore {
 	private lastUserQuery: string = '';
 	private conversationContext: string[] = [];
 
-	// Thinking tier state - store pending response until current response completes
+	// Thinking tier state - coordinates between async fetch and WebSocket response lifecycle
 	private pendingThinkingResponse: string | null = null;
 	private delegationTriggered: boolean = false;
+	private realtimeResponseDone: boolean = false;
 
 	// Reconnection state
 	private reconnectAttempts = 0;
@@ -246,9 +247,11 @@ class RealtimeStore {
 					break;
 
 				case 'response.audio.delta':
-					// Audio response chunk - play it
-					this.state = 'speaking';
-					this.processingMode = 'realtime';
+					// Audio response chunk - play it (don't override thinking state)
+					if (this.state !== 'thinking') {
+						this.state = 'speaking';
+						this.processingMode = 'realtime';
+					}
 					if (message.delta) {
 						const audioData = this.base64ToArrayBuffer(message.delta as string);
 						audioManager.queuePlayback(audioData);
@@ -262,12 +265,17 @@ class RealtimeStore {
 				case 'response.done':
 					// Full response complete - now safe to inject thinking response
 					if (this.pendingThinkingResponse) {
+						// Fetch already completed — inject immediately
 						const response = this.pendingThinkingResponse;
 						this.pendingThinkingResponse = null;
 						this.delegationTriggered = false;
+						this.realtimeResponseDone = false;
 						// Small delay to ensure audio is done
 						setTimeout(() => this.injectResponse(response), 100);
-					} else if (this.state !== 'thinking') {
+					} else if (this.state === 'thinking') {
+						// Fetch still in progress — signal that WS is ready
+						this.realtimeResponseDone = true;
+					} else {
 						this.state = 'connected';
 						this.processingMode = 'idle';
 						this.delegationTriggered = false;
@@ -373,12 +381,31 @@ class RealtimeStore {
 				this.isSearching = false; // Search completed
 			}
 
-			// Store the response - will be injected when response.done fires
+			// If response.done already fired while we were fetching, inject immediately
+			if (this.realtimeResponseDone) {
+				this.realtimeResponseDone = false;
+				this.delegationTriggered = false;
+				this.activeModel = 'gpt-4o-realtime';
+				setTimeout(() => this.injectResponse(answer), 100);
+				return;
+			}
+
+			// Otherwise store — response.done handler will inject when WS response completes
 			this.pendingThinkingResponse = answer;
 
 		} catch (err) {
 			console.error('Thinking error:', err);
-			this.pendingThinkingResponse = "I had trouble analyzing that. Let me give you a simpler answer.";
+			const fallback = "I had trouble analyzing that. Let me give you a simpler answer.";
+
+			if (this.realtimeResponseDone) {
+				this.realtimeResponseDone = false;
+				this.delegationTriggered = false;
+				this.activeModel = 'gpt-4o-realtime';
+				setTimeout(() => this.injectResponse(fallback), 100);
+				return;
+			}
+
+			this.pendingThinkingResponse = fallback;
 		} finally {
 			// Switch back to realtime model for speaking
 			this.activeModel = 'gpt-4o-realtime';
@@ -595,6 +622,7 @@ class RealtimeStore {
 		// Clear pending thinking response
 		this.pendingThinkingResponse = null;
 		this.delegationTriggered = false;
+		this.realtimeResponseDone = false;
 
 		// Reset state
 		this.state = 'connected';
@@ -620,6 +648,7 @@ class RealtimeStore {
 		// Clear pending thinking response
 		this.pendingThinkingResponse = null;
 		this.delegationTriggered = false;
+		this.realtimeResponseDone = false;
 
 		// Reset state
 		this.state = 'connected';
@@ -652,6 +681,7 @@ class RealtimeStore {
 		this.sessionId = null;
 		this.pendingThinkingResponse = null;
 		this.delegationTriggered = false;
+		this.realtimeResponseDone = false;
 
 		// Reset status
 		this.activeModel = null;
